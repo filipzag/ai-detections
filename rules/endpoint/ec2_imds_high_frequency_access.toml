@@ -1,0 +1,74 @@
+[metadata]
+creation_date = "2026-02-17"
+maturity = "production"
+updated_date = "2026-02-17"
+
+[rule]
+author = ["Elastic Security Research"]
+description = "Detects rapid, repeated access to the EC2 metadata service from a single process within a short time window, indicating credential harvesting or automated exploitation."
+false_positives = [
+  "Rapid instance startup scripts querying metadata multiple times",
+  "Monitoring dashboards polling instance information",
+  "Auto-scaling health checks"
+]
+from = "now-9m"
+index = ["logs-endpoint.events.network-*"]
+language = "eql"
+license = "Elastic License v2"
+name = "High-Frequency IMDS Access from Single Process"
+risk_score = 68
+rule_id = "b2c3d4e5-f6a7-4890-b123-456789abcde2"
+severity = "high"
+tags = [
+  "Domain: Endpoint",
+  "Domain: Cloud",
+  "Data Source: Elastic Defend",
+  "Use Case: Threat Detection",
+  "Tactic: Credential Access",
+  "Platform: AWS",
+  "Platform: Linux"
+]
+timestamp_override = "event.ingested"
+type = "eql"
+
+query = '''
+sequence by process.entity_id, host.id with maxspan=5m
+[network where event.dataset == "endpoint.events.network" and
+ destination.ip == "169.254.169.254" and
+ destination.port == 80]
+[network where event.dataset == "endpoint.events.network" and
+ destination.ip == "169.254.169.254" and
+ destination.port == 80]
+[network where event.dataset == "endpoint.events.network" and
+ destination.ip == "169.254.169.254" and
+ destination.port == 80]
+[network where event.dataset == "endpoint.events.network" and
+ destination.ip == "169.254.169.254" and
+ destination.port == 80]
+[network where event.dataset == "endpoint.events.network" and
+ destination.ip == "169.254.169.254" and
+ destination.port == 80]
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1552"
+name = "Unsecured Credentials"
+reference = "https://attack.mitre.org/techniques/T1552/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1552.005"
+name = "Cloud Instance Metadata API"
+reference = "https://attack.mitre.org/techniques/T1552/005/"
+
+[[rule.threat.technique]]
+id = "T1059"
+name = "Command and Scripting Interpreter"
+reference = "https://attack.mitre.org/techniques/T1059/"
+
+[rule.threat.tactic]
+id = "TA0006"
+name = "Credential Access"
+reference = "https://attack.mitre.org/tactics/TA0006/"

@@ -1,0 +1,59 @@
+[metadata]
+creation_date = "2026-02-17"
+maturity = "production"
+updated_date = "2026-02-17"
+
+[rule]
+author = ["Elastic Security Research"]
+description = "Detects when unusual processes access the EC2 Instance Metadata Service (IMDS) at 169.254.169.254, indicating potential credential theft attempts or SSRF exploitation."
+false_positives = [
+  "AWS monitoring agents and legitimate automation tools",
+  "Configuration management tools like Ansible or Puppet",
+  "Container orchestration systems (ECS agent, Kubernetes)"
+]
+from = "now-9m"
+index = ["logs-endpoint.events.network-*"]
+language = "eql"
+license = "Elastic License v2"
+name = "Suspicious Process Accessing EC2 Instance Metadata Service"
+risk_score = 73
+rule_id = "a1b2c3d4-e5f6-4789-a012-3456789abcd1"
+severity = "high"
+tags = [
+  "Domain: Endpoint",
+  "Domain: Cloud",
+  "Data Source: Elastic Defend",
+  "Use Case: Threat Detection",
+  "Tactic: Credential Access",
+  "Platform: AWS",
+  "Platform: Linux"
+]
+timestamp_override = "event.ingested"
+type = "eql"
+
+query = '''
+network where event.dataset == "endpoint.events.network" and
+destination.ip == "169.254.169.254" and
+destination.port == 80 and
+not process.name in ("aws-cli", "boto3", "cloud-init", "amazon-ssm-agent", 
+                      "aws-kinesis-agent", "amazon-cloudwatch-agent") and
+not process.executable like "/opt/aws/*"
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1552"
+name = "Unsecured Credentials"
+reference = "https://attack.mitre.org/techniques/T1552/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1552.005"
+name = "Cloud Instance Metadata API"
+reference = "https://attack.mitre.org/techniques/T1552/005/"
+
+[rule.threat.tactic]
+id = "TA0006"
+name = "Credential Access"
+reference = "https://attack.mitre.org/tactics/TA0006/"
