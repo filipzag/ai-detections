@@ -1,0 +1,62 @@
+{
+  "name": "Linux Privilege Escalation via LD_PRELOAD Hijacking",
+  "description": "Detects processes launched with the LD_PRELOAD environment variable set, which can be used to inject a malicious shared library into a privileged process. When combined with SUID binaries or sudo, this technique allows attackers to execute arbitrary code with elevated privileges. Maps to MITRE ATT&CK T1574.006 (Dynamic Linker Hijacking).\n\nReferences:\n- https://attack.mitre.org/techniques/T1574/006/\n- https://www.hackingarticles.in/linux-privilege-escalation-using-ld_preload/\n- https://rafalcieslak.wordpress.com/2013/04/02/dynamic-linker-tricks-using-ld_preload-to-cheat-inject-features-and-investigate-programs/",
+  "type": "eql",
+  "language": "eql",
+  "index": ["logs-endpoint.events.process-*"],
+  "query": "process where host.os.type == \"linux\" and event.type == \"start\" and event.action == \"exec\" and\n  process.env_vars : \"LD_PRELOAD=*\" and\n  not (\n    /* Exclude known legitimate tools that use LD_PRELOAD */\n    process.name in (\"ldconfig\", \"ldd\", \"ltrace\", \"strace\") or\n    /* Exclude common testing/debugging frameworks */\n    process.parent.name in (\"valgrind\", \"gdb\", \"lldb\") or\n    /* Exclude package managers */\n    process.parent.name in (\"dpkg\", \"rpm\", \"apt-get\", \"yum\", \"dnf\") or\n    /* Exclude known security tools */\n    process.executable : (\"/usr/lib/jvm/*\", \"/usr/lib/jdk/*\")\n  )",
+  "severity": "high",
+  "risk_score": 73,
+  "rule_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567803",
+  "enabled": true,
+  "tags": ["Linux", "Privilege Escalation", "Defense Evasion", "T1574.006", "LD_PRELOAD", "Library Injection", "Elastic Defend"],
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0004",
+        "name": "Privilege Escalation",
+        "reference": "https://attack.mitre.org/tactics/TA0004/"
+      },
+      "technique": [
+        {
+          "id": "T1574",
+          "name": "Hijack Execution Flow",
+          "reference": "https://attack.mitre.org/techniques/T1574/",
+          "subtechnique": [
+            {
+              "id": "T1574.006",
+              "name": "Dynamic Linker Hijacking",
+              "reference": "https://attack.mitre.org/techniques/T1574/006/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0005",
+        "name": "Defense Evasion",
+        "reference": "https://attack.mitre.org/tactics/TA0005/"
+      },
+      "technique": [
+        {
+          "id": "T1574",
+          "name": "Hijack Execution Flow",
+          "reference": "https://attack.mitre.org/techniques/T1574/"
+        }
+      ]
+    }
+  ],
+  "false_positives": [
+    "Some legitimate applications and development tools use LD_PRELOAD for instrumentation (e.g., memory profilers, test harnesses). Review the specific library being preloaded.",
+    "Java applications may use LD_PRELOAD for JVM agent injection. Tune by excluding known JVM paths."
+  ],
+  "author": ["AI Detection Engineer"],
+  "references": [
+    "https://attack.mitre.org/techniques/T1574/006/",
+    "https://www.hackingarticles.in/linux-privilege-escalation-using-ld_preload/",
+    "https://rafalcieslak.wordpress.com/2013/04/02/dynamic-linker-tricks-using-ld_preload-to-cheat-inject-features-and-investigate-programs/"
+  ]
+}

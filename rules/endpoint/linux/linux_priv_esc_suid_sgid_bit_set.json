@@ -1,0 +1,47 @@
+{
+  "name": "Linux Privilege Escalation via SUID/SGID Bit Set",
+  "description": "Detects the use of chmod or install to set the SUID or SGID bit on a file by a non-root user. Attackers abuse setuid/setgid binaries to execute code with elevated privileges. This maps to MITRE ATT&CK T1548.001 (Setuid and Setgid).\n\nReferences:\n- https://attack.mitre.org/techniques/T1548/001/\n- https://gtfobins.github.io/\n- https://www.elastic.co/security-labs/",
+  "type": "eql",
+  "language": "eql",
+  "index": ["logs-endpoint.events.process-*"],
+  "query": "process where host.os.type == \"linux\" and event.type == \"start\" and event.action == \"exec\" and\n  process.name in (\"chmod\", \"install\") and\n  (\n    process.args : (\"+s\", \"u+s\", \"g+s\", \"ug+s\", \"4755\", \"4777\", \"2755\", \"6755\") or\n    process.command_line : (\"*chmod*+s*\", \"*install*-m*4*\", \"*install*-m*6*\")\n  ) and\n  not user.id == \"0\" and\n  not process.parent.name in (\"dpkg\", \"rpm\", \"apt\", \"yum\", \"dnf\", \"zypper\", \"snap\", \"flatpak\")",
+  "severity": "high",
+  "risk_score": 73,
+  "rule_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567801",
+  "enabled": true,
+  "tags": ["Linux", "Privilege Escalation", "T1548.001", "SUID", "SGID", "Elastic Defend"],
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0004",
+        "name": "Privilege Escalation",
+        "reference": "https://attack.mitre.org/tactics/TA0004/"
+      },
+      "technique": [
+        {
+          "id": "T1548",
+          "name": "Abuse Elevation Control Mechanism",
+          "reference": "https://attack.mitre.org/techniques/T1548/",
+          "subtechnique": [
+            {
+              "id": "T1548.001",
+              "name": "Setuid and Setgid",
+              "reference": "https://attack.mitre.org/techniques/T1548/001/"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "false_positives": [
+    "Package managers (dpkg, rpm, apt, yum) legitimately set SUID bits during installation - these are excluded.",
+    "System administrators may manually set SUID bits for legitimate tools. Tune by adding known-good parent processes or specific binaries."
+  ],
+  "author": ["AI Detection Engineer"],
+  "references": [
+    "https://attack.mitre.org/techniques/T1548/001/",
+    "https://gtfobins.github.io/",
+    "https://www.elastic.co/security-labs/"
+  ]
+}

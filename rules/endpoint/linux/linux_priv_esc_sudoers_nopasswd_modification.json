@@ -1,0 +1,62 @@
+{
+  "name": "Linux Privilege Escalation via Sudoers NOPASSWD Entry",
+  "description": "Detects modification of /etc/sudoers or files under /etc/sudoers.d/ to add NOPASSWD entries, which allow users to execute commands as root without a password. This is a common persistence and privilege escalation technique. Maps to MITRE ATT&CK T1548.003 (Sudo and Sudo Caching).\n\nReferences:\n- https://attack.mitre.org/techniques/T1548/003/\n- https://askubuntu.com/questions/334318/sudoers-file-enable-nopasswd-for-user-all-commands",
+  "type": "eql",
+  "language": "eql",
+  "index": ["logs-endpoint.events.process-*"],
+  "query": "process where host.os.type == \"linux\" and event.type == \"start\" and event.action == \"exec\" and\n  (\n    /* Direct write to sudoers via shell redirection or tee */\n    (\n      process.name in (\"bash\", \"sh\", \"zsh\", \"dash\", \"ksh\") and\n      process.command_line : (\"*NOPASSWD*sudoers*\", \"*sudoers*NOPASSWD*\", \"*sudoers.d*NOPASSWD*\")\n    ) or\n    /* tee writing to sudoers */\n    (\n      process.name == \"tee\" and\n      process.args : (\"/etc/sudoers\", \"/etc/sudoers.d/*\")\n    ) or\n    /* visudo being used with -f flag pointing to sudoers.d */\n    (\n      process.name == \"visudo\" and\n      process.args : \"-f\" and\n      process.args : \"/etc/sudoers.d/*\"\n    ) or\n    /* sed/awk modifying sudoers in-place */\n    (\n      process.name in (\"sed\", \"awk\", \"perl\") and\n      process.command_line : (\"*NOPASSWD*\", \"*sudoers*\") and\n      process.args : (\"/etc/sudoers\", \"/etc/sudoers.d/*\")\n    )\n  )",
+  "severity": "critical",
+  "risk_score": 90,
+  "rule_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567802",
+  "enabled": true,
+  "tags": ["Linux", "Privilege Escalation", "Persistence", "T1548.003", "Sudo", "Sudoers", "Elastic Defend"],
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0004",
+        "name": "Privilege Escalation",
+        "reference": "https://attack.mitre.org/tactics/TA0004/"
+      },
+      "technique": [
+        {
+          "id": "T1548",
+          "name": "Abuse Elevation Control Mechanism",
+          "reference": "https://attack.mitre.org/techniques/T1548/",
+          "subtechnique": [
+            {
+              "id": "T1548.003",
+              "name": "Sudo and Sudo Caching",
+              "reference": "https://attack.mitre.org/techniques/T1548/003/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0003",
+        "name": "Persistence",
+        "reference": "https://attack.mitre.org/tactics/TA0003/"
+      },
+      "technique": [
+        {
+          "id": "T1548",
+          "name": "Abuse Elevation Control Mechanism",
+          "reference": "https://attack.mitre.org/techniques/T1548/"
+        }
+      ]
+    }
+  ],
+  "false_positives": [
+    "Legitimate system administrators may modify sudoers for operational purposes. Validate with change management records.",
+    "Configuration management tools (Ansible, Chef, Puppet) may modify sudoers. Tune by excluding their process names from the parent process chain."
+  ],
+  "author": ["AI Detection Engineer"],
+  "references": [
+    "https://attack.mitre.org/techniques/T1548/003/",
+    "https://askubuntu.com/questions/334318/sudoers-file-enable-nopasswd-for-user-all-commands",
+    "https://help.ubuntu.com/community/Sudoers"
+  ]
+}
