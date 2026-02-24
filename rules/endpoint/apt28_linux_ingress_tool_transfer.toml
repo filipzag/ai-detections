@@ -1,0 +1,46 @@
+[metadata]
+creation_date = "2026/02/24"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/24"
+min_stack_version = "8.14.0"
+
+[rule]
+name = "Linux Ingress Tool Transfer to Suspicious Directory"
+author = ["AI Detection Engineering"]
+description = """
+Detects file downloads using curl or wget to suspicious staging directories commonly used by attackers
+on Linux systems. APT28 downloads second-stage payloads, tools, and scripts to /tmp, /dev/shm, /var/tmp,
+or hidden directories. This sequence correlates the download with subsequent execution of the downloaded file.
+"""
+risk_score = 47
+severity = "medium"
+license = "Elastic License v2"
+rule_id = "apt28-linux-t1105-transfer-001"
+type = "eql"
+language = "eql"
+index = ["logs-endpoint.events.process-default"]
+
+query = '''
+sequence by host.id with maxspan=1m
+  [process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+    process.name in ("curl", "wget") and
+    process.args : ("-o", "-O", "--output") and
+    process.command_line : ("*/tmp/*", "*/dev/shm/*", "*/var/tmp/*", "*/root/.*", "*/home/*/.*")]
+  [process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+    (process.executable : ("/tmp/*", "/dev/shm/*", "/var/tmp/*") or
+     process.command_line : ("*chmod +x*", "*chmod 777*", "*chmod 755*"))]
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+  [[rule.threat.technique]]
+  id = "T1105"
+  name = "Ingress Tool Transfer"
+  reference = "https://attack.mitre.org/techniques/T1105/"
+
+  [rule.threat.tactic]
+  id = "TA0011"
+  name = "Command and Control"
+  reference = "https://attack.mitre.org/tactics/TA0011/"

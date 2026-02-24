@@ -1,0 +1,52 @@
+[metadata]
+creation_date = "2026/02/24"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/24"
+min_stack_version = "8.14.0"
+
+[rule]
+name = "Linux Network Sniffing via Packet Capture Tools"
+author = ["AI Detection Engineering"]
+description = """
+Detects execution of network packet capture tools (tcpdump, tshark, dumpcap, ngrep) on Linux systems.
+APT28 uses network sniffing to harvest credentials and intercept sensitive communications. This rule
+flags capture tool execution with write or interface arguments, indicating deliberate credential
+harvesting rather than ad-hoc troubleshooting.
+"""
+risk_score = 47
+severity = "medium"
+license = "Elastic License v2"
+rule_id = "apt28-linux-t1040-sniffing-001"
+type = "eql"
+language = "eql"
+index = ["logs-endpoint.events.process-default"]
+
+query = '''
+process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+  process.name in ("tcpdump", "tshark", "dumpcap", "ngrep", "netsniff-ng") and
+  (
+    process.args in ("-w", "--write", "-i", "--interface") or
+    process.args == "-c" or
+    process.args : "*pcap*"
+  ) and
+  not process.parent.executable in (
+    "/usr/lib/systemd/systemd",
+    "/usr/bin/monit",
+    "/usr/bin/nagios",
+    "/usr/lib/zabbix/externalscripts"
+  )
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+  [[rule.threat.technique]]
+  id = "T1040"
+  name = "Network Sniffing"
+  reference = "https://attack.mitre.org/techniques/T1040/"
+
+  [rule.threat.tactic]
+  id = "TA0006"
+  name = "Credential Access"
+  reference = "https://attack.mitre.org/tactics/TA0006/"
