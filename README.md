@@ -1,236 +1,55 @@
-# AI-Generated Detection Rules
+# AI Detection Engineering - Custom Detection Rules
 
-This repository contains production-ready detection rules for security monitoring and threat detection, generated and validated using Elastic AI Assistant.
+This repository contains custom detection rules for Elastic Security, developed using AI-assisted detection engineering workflows.
 
-## Repository Structure
+## Rules Index
 
-```
-ai-detections/
-├── rules/
-│   ├── aws/              # AWS CloudTrail-based detections
-│   └── endpoint/         # Endpoint-based detections
-└── README.md
-```
+### APT28 (Fancy Bear / Forest Blizzard) - Linux Detection Coverage
 
-## Detection Rules
+These rules address detection gaps for APT28 (MITRE G0007) targeting Linux systems, with a focus on the Drovorub malware capabilities.
 
-### EC2 Pivot to AWS Attack Detection
+| Rule Name | MITRE ID | Severity | Type | File |
+|-----------|----------|----------|------|------|
+| Linux Kernel Module Rootkit Loading via Unusual Parent | T1014 | High | EQL | [apt28_linux_rootkit_kernel_module_loading.toml](rules/endpoint/apt28_linux_rootkit_kernel_module_loading.toml) |
+| Linux Web Shell - Suspicious Process Spawned by Web Server | T1505.003 | High | EQL (sequence) | [apt28_linux_webshell_process_spawned.toml](rules/endpoint/apt28_linux_webshell_process_spawned.toml) |
+| Linux Network Sniffing via Packet Capture Tools | T1040 | Medium | EQL | [apt28_linux_network_sniffing.toml](rules/endpoint/apt28_linux_network_sniffing.toml) |
+| Linux Ingress Tool Transfer to Suspicious Directory | T1105 | Medium | EQL (sequence) | [apt28_linux_ingress_tool_transfer.toml](rules/endpoint/apt28_linux_ingress_tool_transfer.toml) |
 
-Four detection rules covering EC2 instance credential theft and abuse:
+### Rule Details
 
-#### Endpoint-Based Detections
+#### T1014 - Linux Kernel Module Rootkit Loading via Unusual Parent
+- **Threat Context:** APT28's Drovorub malware uses insmod/modprobe to load a kernel module rootkit that hides processes, files, and network connections.
+- **Data Source:** `logs-endpoint.events.process-default`
+- **ART Tests:** `dfb50072-e45a-4c75-a17e-a484809c8553` (insmod), `75483ef8-f10f-444a-bf02-62eb0e48db6f` (modprobe)
+- **Noise Exclusions:** systemd, dracut, depmod, kmod, systemd-modules-load
 
-1. **Suspicious Process Accessing EC2 Instance Metadata Service**
-   - **File:** `rules/endpoint/ec2_imds_suspicious_process_access.toml`
-   - **Severity:** High
-   - **MITRE ATT&CK:** T1552.005
-   - **Description:** Detects unusual processes accessing IMDS at 169.254.169.254
-   - **Use Case:** Identifies SSRF exploitation and credential theft attempts
+#### T1505.003 - Linux Web Shell - Suspicious Process Spawned by Web Server
+- **Threat Context:** APT28 deploys web shells on compromised Linux web servers for persistent remote access and command execution.
+- **Data Source:** `logs-endpoint.events.process-default`
+- **Detection Logic:** Sequence - web server spawns shell interpreter, followed by recon/tool execution within 30s
+- **Noise Exclusions:** Legitimate CGI scripts may need path-based exclusions
 
-2. **High-Frequency IMDS Access from Single Process**
-   - **File:** `rules/endpoint/ec2_imds_high_frequency_access.toml`
-   - **Severity:** High
-   - **MITRE ATT&CK:** T1552.005, T1059
-   - **Description:** Detects rapid credential harvesting attempts (5+ connections in 5 minutes)
-   - **Use Case:** Catches automated exploitation tools and scripts
+#### T1040 - Linux Network Sniffing via Packet Capture Tools
+- **Threat Context:** APT28 uses network sniffing tools to capture credentials and sensitive data traversing the network.
+- **Data Source:** `logs-endpoint.events.process-default`
+- **ART Tests:** `7fe741f7-b265-4951-a7c7-320889083b3e` (tcpdump/tshark)
+- **Noise Exclusions:** systemd, monit, nagios, zabbix monitoring
 
-#### CloudTrail-Based Detections
+#### T1105 - Linux Ingress Tool Transfer to Suspicious Directory
+- **Threat Context:** APT28 downloads second-stage payloads via curl/wget to staging directories (/tmp, /dev/shm, /var/tmp).
+- **Data Source:** `logs-endpoint.events.process-default`
+- **Detection Logic:** Sequence - download to suspicious path, followed by execution/chmod within 1m
+- **Noise Exclusions:** Package managers (apt, yum, dnf, pip) may need exclusions
 
-3. **EC2 Instance Role Credential Abuse for IAM Privilege Escalation**
-   - **File:** `rules/aws/ec2_instance_role_credential_abuse.toml`
-   - **Severity:** Critical
-   - **MITRE ATT&CK:** T1552.005, T1078.004
-   - **Description:** Detects stolen EC2 credentials used for IAM modifications
-   - **Use Case:** Identifies privilege escalation after credential theft
+## Data Sources Required
 
-4. **EC2 Instance Role Used for AWS Reconnaissance Activity**
-   - **File:** `rules/aws/ec2_instance_role_reconnaissance.toml`
-   - **Severity:** High
-   - **MITRE ATT&CK:** T1078.004, T1087, T1580
-   - **Description:** Detects post-compromise enumeration activities
-   - **Use Case:** Catches attackers mapping the AWS environment
-
-## Deployment
-
-### Prerequisites
-
-- Elastic Security 8.x or higher
-- AWS CloudTrail integration configured
-- Elastic Defend (endpoint agent) deployed on EC2 instances
-- Data streams:
-  - `logs-aws.cloudtrail-*`
-  - `logs-endpoint.events.network-*`
-
-### Installation
-
-1. **Clone this repository:**
-   ```bash
-   git clone https://github.com/filipzag/ai-detections.git
-   cd ai-detections
-   ```
-
-2. **Import TOML files into Elastic Security:**
-   - Navigate to **Security → Rules → Detection rules (SIEM)**
-   - Click **"Import"** and select the TOML files
-   - Or use the Elastic Detection Rules CLI:
-     ```bash
-     detection-rules import-rules -d rules/
-     ```
-
-3. **Enable rules in detection-only mode initially:**
-   - Set all rules to detection-only for 1-2 weeks
-   - Monitor for false positives
-   - Document legitimate automation patterns
-
-4. **Tune exclusions as needed:**
-   - Add trusted processes and roles to exclusion lists
-   - Adjust time windows based on your environment
-
-5. **Enable alerting in production:**
-   - Configure appropriate severity levels
-   - Set up notification channels
-   - Create incident response playbooks
-
-## Testing
-
-### Manual Attack Simulation
-
-Test the endpoint-based detections:
-
-```bash
-# SSH into EC2 instance
-ssh ec2-user@<instance-ip>
-
-# Simulate credential theft from IMDS
-curl http://169.254.169.254/latest/meta-data/iam/security-credentials/
-ROLE_NAME=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/)
-curl http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE_NAME
-```
-
-### Expected Alerts
-
-- **Endpoint rules** should trigger within seconds of IMDS access
-- **CloudTrail rules** trigger when stolen credentials are used for AWS API calls
-- Check **Security → Alerts** in Kibana for triggered detections
-
-### Validation Results
-
-✅ All queries validated against live data  
-✅ Field mappings confirmed in target indices  
-✅ EQL syntax tested and corrected  
-✅ Queries execute without errors  
-
-## Tuning
-
-### Common Exclusions
-
-Add these to reduce false positives:
-
-```eql
-# Endpoint rules - exclude trusted processes
-and not process.name in ("your-monitoring-tool", "your-backup-agent")
-and not process.executable like "/opt/your-app/*"
-
-# CloudTrail rules - exclude trusted automation
-and not aws.cloudtrail.user_identity.arn like "*TrustedAutomationRole*"
-and not aws.cloudtrail.user_identity.arn like "*TerraformRole*"
-```
-
-### Adjusting Time Windows
-
-- **High-frequency detection:** Change `maxspan=5m` to `maxspan=10m` if legitimate tools trigger alerts
-- **IAM abuse detection:** Adjust `maxspan=1h` based on your automation patterns
-- **Reconnaissance detection:** Modify `maxspan=30m` for slower attack scenarios
-
-## Mitigation & Hardening
-
-### 1. Enforce IMDSv2 (Prevents SSRF Attacks)
-
-```bash
-aws ec2 modify-instance-metadata-options \
-  --instance-id i-xxxxx \
-  --http-tokens required \
-  --http-put-response-hop-limit 1
-```
-
-### 2. Restrict IMDS Access with iptables
-
-```bash
-# Block IMDS access from non-root users
-iptables -A OUTPUT -m owner ! --uid-owner 0 -d 169.254.169.254 -j DROP
-```
-
-### 3. Implement Least Privilege IAM Policies
-
-Minimize permissions granted to EC2 instance roles:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject"
-      ],
-      "Resource": "arn:aws:s3:::specific-bucket/*"
-    }
-  ]
-}
-```
-
-### 4. Use VPC Endpoints
-
-Restrict AWS API calls to private networks, preventing credential exfiltration.
-
-### 5. Enable AWS GuardDuty
-
-Provides behavioral anomaly detection for AWS accounts.
-
-## Detection Coverage
-
-| Attack Stage | Detection Layer | Coverage |
-|-------------|----------------|----------|
-| **Credential Theft** | Endpoint | Process-based IMDS access monitoring |
-| **Automated Harvesting** | Endpoint | High-frequency connection detection |
-| **Privilege Escalation** | CloudTrail | IAM modification tracking |
-| **Reconnaissance** | CloudTrail | Resource enumeration detection |
-
-## MITRE ATT&CK Mapping
-
-- **T1552.005** - Unsecured Credentials: Cloud Instance Metadata API
-- **T1078.004** - Valid Accounts: Cloud Accounts
-- **T1087** - Account Discovery
-- **T1580** - Cloud Infrastructure Discovery
-- **T1059** - Command and Scripting Interpreter
+| Data Stream | Purpose |
+|---|---|
+| `logs-endpoint.events.process-default` | Process creation, execution, and command line monitoring |
+| `logs-endpoint.events.file-default` | File creation, modification, and deletion events |
+| `logs-endpoint.events.network-default` | Network connection and DNS events |
 
 ## References
 
-- [MITRE ATT&CK T1552.005 - Cloud Instance Metadata API](https://attack.mitre.org/techniques/T1552/005/)
-- [AWS IMDSv2 Security Best Practices](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html)
-- [Elastic Security Labs - Detecting AWS Credential Access](https://www.elastic.co/security-labs/detecting-aws-credential-access)
-- [Capital One Breach Analysis - SSRF to IMDS](https://krebsonsecurity.com/2019/07/capital-one-data-theft-impacts-106m-people/)
-
-## Contributing
-
-To add new detection rules:
-
-1. Create a new branch
-2. Add TOML files following the existing structure
-3. Validate queries against your test environment
-4. Submit a pull request with validation results
-
-## License
-
-Elastic License v2
-
-## Author
-
-Generated and validated by Elastic AI Assistant
-
----
-
-**Last Updated:** 2026-02-17  
-**Detection Rules:** 4  
-**Status:** Production Ready ✅
+- [NSA/FBI Advisory - Russian GRU Drovorub Malware (Aug 2020)](https://media.defense.gov/2020/Aug/13/2002476465/-1/-1/0/CSA_DROVORUB_RUSSIAN_GRU_MALWARE_AUG_2020.PDF)
+- [MITRE ATT&CK - APT28 (G0007)](https://attack.mitre.org/groups/G0007/)
