@@ -1,0 +1,49 @@
+[metadata]
+creation_date = "2026/02/24"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/24"
+min_stack_version = "8.14.0"
+
+[rule]
+name = "Linux Kernel Module Rootkit Loading via Unusual Parent"
+author = ["AI Detection Engineering"]
+description = """
+Detects the loading of kernel modules using insmod or modprobe from unusual parent processes,
+a technique used by APT28's Drovorub malware to install rootkits on Linux systems. Kernel module
+loading outside of standard system management workflows is a strong indicator of rootkit installation.
+"""
+risk_score = 73
+severity = "high"
+license = "Elastic License v2"
+rule_id = "apt28-linux-t1014-rootkit-001"
+type = "eql"
+language = "eql"
+index = ["logs-endpoint.events.process-default"]
+
+query = '''
+process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+  process.name in ("insmod", "modprobe") and
+  not process.parent.executable in (
+    "/usr/lib/systemd/systemd",
+    "/usr/bin/dracut",
+    "/usr/sbin/depmod",
+    "/usr/bin/kmod",
+    "/usr/lib/systemd/systemd-modules-load",
+    "/usr/sbin/modprobe"
+  ) and
+  not process.args in ("--dry-run", "-n", "--show", "--showconfig", "-r", "--remove")
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+  [[rule.threat.technique]]
+  id = "T1014"
+  name = "Rootkit"
+  reference = "https://attack.mitre.org/techniques/T1014/"
+
+  [rule.threat.tactic]
+  id = "TA0005"
+  name = "Defense Evasion"
+  reference = "https://attack.mitre.org/tactics/TA0005/"
