@@ -1,55 +1,38 @@
-# AI Detection Engineering - Custom Detection Rules
+# AI Detections
 
-This repository contains custom detection rules for Elastic Security, developed using AI-assisted detection engineering workflows.
+Detection rules created and managed by AI Detection Engineering pipeline.
 
-## Rules Index
+## Rules
 
-### APT28 (Fancy Bear / Forest Blizzard) - Linux Detection Coverage
+### Endpoint Rules
 
-These rules address detection gaps for APT28 (MITRE G0007) targeting Linux systems, with a focus on the Drovorub malware capabilities.
+| Rule Name | MITRE Technique | Severity | Type | Data Source |
+|---|---|---|---|---|
+| [APT28 Linux Ingress Tool Transfer](rules/endpoint/apt28_linux_ingress_tool_transfer.toml) | T1105 — Ingress Tool Transfer | medium | eql | Elastic Defend |
+| [APT28 Linux Network Sniffing](rules/endpoint/apt28_linux_network_sniffing.toml) | T1040 — Network Sniffing | medium | eql | Elastic Defend |
+| [APT28 Linux Rootkit Kernel Module Loading](rules/endpoint/apt28_linux_rootkit_kernel_module_loading.toml) | T1014 — Rootkit | high | eql | Elastic Defend |
+| [APT28 Linux Timestomping via Touch Command](rules/endpoint/apt28_linux_timestomping_touch.toml) | T1070.006 — Timestomp | medium | eql | Elastic Defend |
+| [APT28 Linux Web Shell Process Spawned](rules/endpoint/apt28_linux_webshell_process_spawned.toml) | T1505.003 — Web Shell | high | eql | Elastic Defend |
+| [EC2 IMDS High Frequency Access](rules/endpoint/ec2_imds_high_frequency_access.toml) | T1552.005 — Cloud Instance Metadata API | high | threshold | Elastic Defend |
+| [EC2 IMDS Suspicious Process Access](rules/endpoint/ec2_imds_suspicious_process_access.toml) | T1552.005 — Cloud Instance Metadata API | medium | eql | Elastic Defend |
 
-| Rule Name | MITRE ID | Severity | Type | File |
-|-----------|----------|----------|------|------|
-| Linux Kernel Module Rootkit Loading via Unusual Parent | T1014 | High | EQL | [apt28_linux_rootkit_kernel_module_loading.toml](rules/endpoint/apt28_linux_rootkit_kernel_module_loading.toml) |
-| Linux Web Shell - Suspicious Process Spawned by Web Server | T1505.003 | High | EQL (sequence) | [apt28_linux_webshell_process_spawned.toml](rules/endpoint/apt28_linux_webshell_process_spawned.toml) |
-| Linux Network Sniffing via Packet Capture Tools | T1040 | Medium | EQL | [apt28_linux_network_sniffing.toml](rules/endpoint/apt28_linux_network_sniffing.toml) |
-| Linux Ingress Tool Transfer to Suspicious Directory | T1105 | Medium | EQL (sequence) | [apt28_linux_ingress_tool_transfer.toml](rules/endpoint/apt28_linux_ingress_tool_transfer.toml) |
+## APT28 Linux Coverage Map
 
-### Rule Details
+| MITRE Technique | Status | Rule |
+|---|---|---|
+| T1014 — Rootkit | :white_check_mark: Covered | apt28_linux_rootkit_kernel_module_loading |
+| T1040 — Network Sniffing | :white_check_mark: Covered | apt28_linux_network_sniffing |
+| T1070.006 — Timestomp | :white_check_mark: Covered | apt28_linux_timestomping_touch |
+| T1105 — Ingress Tool Transfer | :white_check_mark: Covered | apt28_linux_ingress_tool_transfer |
+| T1505.003 — Web Shell | :white_check_mark: Covered | apt28_linux_webshell_process_spawned |
+| T1003 — OS Credential Dumping | :x: Gap | — |
+| T1057 — Process Discovery | :x: Gap | — |
+| T1070.004 — File Deletion | :x: Gap | — |
+| T1083 — File and Directory Discovery | :x: Gap | — |
+| T1140 — Deobfuscate/Decode Files | :x: Gap | — |
+| T1560.001 — Archive via Utility | :x: Gap | — |
+| T1564.001 — Hidden Files and Directories | :x: Gap | — |
 
-#### T1014 - Linux Kernel Module Rootkit Loading via Unusual Parent
-- **Threat Context:** APT28's Drovorub malware uses insmod/modprobe to load a kernel module rootkit that hides processes, files, and network connections.
-- **Data Source:** `logs-endpoint.events.process-default`
-- **ART Tests:** `dfb50072-e45a-4c75-a17e-a484809c8553` (insmod), `75483ef8-f10f-444a-bf02-62eb0e48db6f` (modprobe)
-- **Noise Exclusions:** systemd, dracut, depmod, kmod, systemd-modules-load
+## Validation
 
-#### T1505.003 - Linux Web Shell - Suspicious Process Spawned by Web Server
-- **Threat Context:** APT28 deploys web shells on compromised Linux web servers for persistent remote access and command execution.
-- **Data Source:** `logs-endpoint.events.process-default`
-- **Detection Logic:** Sequence - web server spawns shell interpreter, followed by recon/tool execution within 30s
-- **Noise Exclusions:** Legitimate CGI scripts may need path-based exclusions
-
-#### T1040 - Linux Network Sniffing via Packet Capture Tools
-- **Threat Context:** APT28 uses network sniffing tools to capture credentials and sensitive data traversing the network.
-- **Data Source:** `logs-endpoint.events.process-default`
-- **ART Tests:** `7fe741f7-b265-4951-a7c7-320889083b3e` (tcpdump/tshark)
-- **Noise Exclusions:** systemd, monit, nagios, zabbix monitoring
-
-#### T1105 - Linux Ingress Tool Transfer to Suspicious Directory
-- **Threat Context:** APT28 downloads second-stage payloads via curl/wget to staging directories (/tmp, /dev/shm, /var/tmp).
-- **Data Source:** `logs-endpoint.events.process-default`
-- **Detection Logic:** Sequence - download to suspicious path, followed by execution/chmod within 1m
-- **Noise Exclusions:** Package managers (apt, yum, dnf, pip) may need exclusions
-
-## Data Sources Required
-
-| Data Stream | Purpose |
-|---|---|
-| `logs-endpoint.events.process-default` | Process creation, execution, and command line monitoring |
-| `logs-endpoint.events.file-default` | File creation, modification, and deletion events |
-| `logs-endpoint.events.network-default` | Network connection and DNS events |
-
-## References
-
-- [NSA/FBI Advisory - Russian GRU Drovorub Malware (Aug 2020)](https://media.defense.gov/2020/Aug/13/2002476465/-1/-1/0/CSA_DROVORUB_RUSSIAN_GRU_MALWARE_AUG_2020.PDF)
-- [MITRE ATT&CK - APT28 (G0007)](https://attack.mitre.org/groups/G0007/)
+All rules are validated against Atomic Red Team tests before deployment. See individual rule notes for triage and investigation guidance.
