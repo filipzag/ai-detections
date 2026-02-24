@@ -1,0 +1,102 @@
+[metadata]
+creation_date = "2026/02/24"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/24"
+min_stack_version = "8.14.0"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = """
+Detects potential timestomping activity on Linux systems. APT28 (Forest Blizzard/Fancy Bear) is known to use the
+touch command with -t, -r, or -d flags to alter file timestamps, making malicious files appear older or match
+legitimate system files. This technique (T1070.006) is used to evade forensic analysis and timeline reconstruction.
+"""
+name = "APT28 Linux Timestomping via Touch Command"
+risk_score = 47
+rule_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+severity = "medium"
+tags = [
+    "Domain: Endpoint",
+    "OS: Linux",
+    "Use Case: Threat Detection",
+    "Tactic: Defense Evasion",
+    "Data Source: Elastic Defend",
+    "Threat: APT28"
+]
+type = "eql"
+language = "eql"
+license = "Elastic License v2"
+timestamp_override = "event.ingested"
+
+query = '''
+process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+  process.name == "touch" and process.args in ("-t", "-r", "-d") and
+  not process.parent.executable in (
+    "/usr/bin/make", "/usr/bin/cmake", "/usr/bin/dpkg", "/usr/bin/rpm",
+    "/usr/bin/yum", "/usr/bin/apt-get", "/usr/bin/dnf", "/usr/bin/pip",
+    "/usr/bin/pip3", "/usr/bin/conda", "/usr/lib/systemd/systemd",
+    "/usr/bin/ansible-playbook", "/usr/bin/puppet", "/usr/bin/chef-client",
+    "/opt/chef/bin/chef-client", "/usr/bin/salt-minion"
+  ) and
+  not process.parent.name in ("make", "cmake", "dpkg", "rpm", "yum", "apt-get", "dnf") and
+  not process.command_line like "*ec2net_alias*"
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+  [[rule.threat.technique]]
+  id = "T1070"
+  name = "Indicator Removal"
+  reference = "https://attack.mitre.org/techniques/T1070/"
+
+    [[rule.threat.technique.subtechnique]]
+    id = "T1070.006"
+    name = "Timestomp"
+    reference = "https://attack.mitre.org/techniques/T1070/006/"
+
+  [rule.threat.tactic]
+  id = "TA0005"
+  name = "Defense Evasion"
+  reference = "https://attack.mitre.org/tactics/TA0005/"
+
+[rule.false_positives]
+values = [
+    "Build systems (make, cmake) frequently use touch to manage file timestamps.",
+    "Package managers (dpkg, rpm, yum, apt-get) may use touch during installation.",
+    "Configuration management tools (Ansible, Puppet, Chef, Salt) may touch files as part of idempotent operations.",
+    "Backup and restore operations may legitimately reset timestamps.",
+    "EC2 network configuration scripts that use touch on systemd network files."
+]
+
+[rule.note]
+value = """
+## Triage and Analysis
+
+### Investigating APT28 Linux Timestomping via Touch Command
+
+Timestomping is a defense evasion technique where adversaries modify file timestamps to blend malicious artifacts
+with legitimate files. APT28 has been observed using this technique on compromised Linux hosts, particularly after
+deploying tools like Drovorub or web shells.
+
+### Key Investigation Steps
+
+1. Examine the touch command arguments: Check process.args for the specific timestamp being set. Dates far
+   in the past (e.g., 1970) or matching system binaries are highly suspicious.
+2. Identify the target file: The file path in process.args reveals what was timestomped.
+   Files in /tmp, /var/tmp, /dev/shm, or web-accessible directories are high-priority.
+3. Check the parent process: A touch -t spawned from a shell session (bash/sh) initiated by a web server
+   (apache, nginx) or a reverse shell is a strong indicator of compromise.
+4. Timeline analysis: Look for other APT28 indicators in the same session - tool downloads (curl/wget),
+   network sniffing (tcpdump), or kernel module loading (insmod/modprobe).
+5. User context: Check user.name and user.id. Root-level timestomping on non-system files is suspicious.
+
+### Response and Remediation
+
+- Isolate the affected host and preserve forensic evidence.
+- Examine the file whose timestamp was modified for malicious content.
+- Review the full process tree for the session to identify the initial access vector.
+- Check for persistence mechanisms (cron jobs, systemd services, authorized_keys modifications).
+- Reset credentials for any accounts active on the compromised host.
+"""
