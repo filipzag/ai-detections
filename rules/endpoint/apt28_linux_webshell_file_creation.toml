@@ -1,0 +1,101 @@
+[metadata]
+creation_date = "2026/02/25"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/25"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = """
+Detects the creation of script files in Linux web server document roots. APT28 (Forest Blizzard/Fancy Bear) is known to deploy web shells (T1505.003) on compromised Linux web servers to establish persistent access. This rule catches the deployment phase by monitoring for new script files written to common web-accessible directories such as /var/www/, /usr/share/nginx/, /opt/lampp/, /srv/http/, and Apache/Tomcat default paths. This complements the existing web shell process spawn detection by catching the initial file drop before execution.
+"""
+false_positives = [
+    "Legitimate web application deployments via CI/CD pipelines (e.g., Jenkins, GitLab Runner, Ansible).",
+    "CMS auto-updates (WordPress, Drupal, Joomla) writing plugin or theme files.",
+    "Package managers (apt, yum, dnf) installing web application packages.",
+    "Developer activity on staging/development servers.",
+]
+from = "now-6m"
+index = ["logs-endpoint.events.file-*"]
+language = "eql"
+license = "Elastic License v2"
+name = "APT28 Web Shell File Creation in Linux Web Server Directory"
+note = """## Triage and Analysis
+
+### Context
+APT28 deploys web shells on Linux servers after initial exploitation (e.g., CVE exploitation, credential abuse). The web shell provides persistent remote access and acts as a C2 gateway.
+
+### Key Investigation Steps
+1. **Examine the file**: Check file.path, file.name, and file.extension. Look for obfuscated names, single-character filenames, or names mimicking legitimate files.
+2. **Identify the writing process**: Check process.executable and process.name. Web shells dropped via exploitation will often show the web server process itself (e.g., apache2, nginx) or a shell as the parent.
+3. **Check file contents**: If possible, retrieve and inspect the file for common web shell signatures (e.g., eval(), exec(), system(), passthru(), base64-encoded payloads).
+4. **Correlate with network events**: Look for inbound connections to the web server around the time of file creation, especially from unusual source IPs.
+5. **Check for subsequent process spawns**: Correlate with the companion rule (Web Shell Process Spawn) to see if the file was executed.
+6. **User context**: Verify user.name - web shell drops by www-data, apache, or nginx users are highly suspicious.
+
+### False Positive Analysis
+- CI/CD deployments: Verify process.name matches known deployment tooling and correlate with change management records.
+- CMS updates: Check if the file path matches known CMS plugin/theme directories and if an admin-initiated update was in progress.
+"""
+risk_score = 73
+rule_id = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+severity = "high"
+tags = [
+    "Domain: Endpoint",
+    "OS: Linux",
+    "Use Case: Threat Detection",
+    "Tactic: Persistence",
+    "Technique: T1505.003",
+    "Data Source: Elastic Defend",
+    "Threat: APT28",
+]
+timestamp_override = "event.ingested"
+type = "eql"
+
+query = '''
+file where host.os.type == "linux" and event.type == "creation" and
+  file.extension in ("php", "jsp", "py", "sh", "cgi", "pl", "phtml", "war", "asp", "aspx", "rb", "lua") and
+  file.path like~ (
+    "/var/www/*",
+    "/usr/share/nginx/*",
+    "/usr/share/apache2/*",
+    "/usr/share/httpd/*",
+    "/opt/lampp/htdocs/*",
+    "/opt/bitnami/apache/htdocs/*",
+    "/srv/http/*",
+    "/srv/www/*",
+    "/home/*/public_html/*",
+    "/usr/local/apache2/htdocs/*",
+    "/opt/tomcat/webapps/*",
+    "/var/lib/tomcat*/webapps/*",
+    "/usr/share/tomcat*/webapps/*"
+  ) and
+  not process.executable in (
+    "/usr/bin/apt", "/usr/bin/apt-get", "/usr/bin/dpkg", "/usr/bin/rpm",
+    "/usr/bin/yum", "/usr/bin/dnf", "/usr/bin/pip", "/usr/bin/pip3",
+    "/usr/bin/composer", "/usr/local/bin/composer",
+    "/usr/bin/git", "/usr/local/bin/git",
+    "/usr/bin/unzip", "/usr/bin/tar", "/usr/bin/cp",
+    "/usr/bin/ansible-playbook", "/usr/bin/puppet", "/usr/bin/chef-client",
+    "/opt/chef/bin/chef-client", "/usr/bin/salt-minion"
+  ) and
+  not process.name in ("dpkg", "rpm", "yum", "apt-get", "dnf", "pip", "pip3", "composer", "git")
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1505"
+name = "Server Software Component"
+reference = "https://attack.mitre.org/techniques/T1505/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1505.003"
+name = "Web Shell"
+reference = "https://attack.mitre.org/techniques/T1505/003/"
+
+[rule.threat.tactic]
+id = "TA0003"
+name = "Persistence"
+reference = "https://attack.mitre.org/tactics/TA0003/"
