@@ -1,0 +1,121 @@
+[metadata]
+creation_date = "2026/02/25"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/25"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = """
+Detects Linux web server processes spawning suspicious child processes that may indicate web shell execution. APT38 (NICKEL GLADSTONE, BeagleBoyz, Bluenoroff) is known to deploy web shells on compromised servers for persistent access, particularly targeting financial institutions, SWIFT endpoints, and payment processing systems. This detection identifies web servers (apache2, nginx, php-fpm, httpd) spawning interactive shells, scripting interpreters, or network utilities - a primary indicator of web shell activity.
+"""
+from = "now-9m"
+index = ["logs-endpoint.events.process-*"]
+language = "eql"
+license = "Elastic License v2"
+name = "Linux Web Server Spawning Suspicious Child Process"
+note = """## Triage and Analysis
+
+Web shell execution is a critical persistence technique used by APT38 after initial compromise. This detection identifies behavioral patterns consistent with web shell command execution.
+
+### Key Investigation Steps
+1. Examine the command line arguments of the spawned child process for malicious activity
+2. Identify the web application or directory where the web shell may be located
+3. Check for recent file creation events in web directories (/var/www, /usr/share/nginx, /opt/tomcat)
+4. Review web server access logs for suspicious POST requests or unusual user agents
+5. Investigate the user context - web shells typically run as www-data, apache, or nginx user
+6. Look for network connections from the web server process to external IPs
+7. Check for additional APT38 indicators: cron job creation, systemd service manipulation, privilege escalation attempts
+
+### APT38 Context
+APT38 specifically targets financial sector infrastructure including:
+- Banking application servers
+- SWIFT endpoint systems
+- Payment processing platforms
+- ATM/POS management interfaces
+
+### False Positive Analysis
+- Legitimate administrative scripts executed via web interfaces (rare)
+- Monitoring or health check scripts spawned by web applications
+- Package management operations during application updates
+"""
+references = [
+    "https://attack.mitre.org/groups/G0082/",
+    "https://www.fireeye.com/blog/threat-research/2018/10/apt38-details-on-new-north-korean-regime-backed-threat-group.html",
+    "https://www.cisa.gov/news-events/cybersecurity-advisories/aa20-239a"
+]
+risk_score = 73
+rule_id = "a8f3c2d1-9b4e-4f7a-8c3d-1e5f6a7b8c9d"
+setup = """## Setup
+
+This rule requires Elastic Defend integration with process event collection enabled on Linux endpoints.
+
+### Required Data
+- Process execution events (event.type: start)
+- Parent-child process relationships
+- Command line arguments
+- User context information
+
+### Recommended Configuration
+Enable Elastic Defend on all Linux web servers, particularly those hosting:
+- Financial applications
+- SWIFT endpoints
+- Payment processing systems
+- Customer-facing web applications
+"""
+severity = "high"
+tags = [
+    "Domain: Endpoint",
+    "OS: Linux",
+    "Use Case: Threat Detection",
+    "Tactic: Persistence",
+    "Technique: T1505.003",
+    "Data Source: Elastic Defend",
+    "Threat: APT38",
+    "Use Case: Vulnerability"
+]
+timestamp_override = "event.ingested"
+type = "eql"
+
+query = '''
+process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+process.parent.name in ("apache2", "nginx", "php-fpm", "httpd", "lighttpd", "tomcat", "java") and
+process.name in ("bash", "sh", "dash", "zsh", "python", "python2", "python3", "perl", "ruby", "wget", "curl", "nc", "netcat", "ncat", "base64", "openssl", "socat") and
+not process.parent.args in ("/usr/sbin/apache2", "/usr/sbin/nginx") and
+not process.command_line like "*healthcheck*" and
+not process.command_line like "*monitoring*" and
+not process.args in ("-c", "echo") or
+(process.parent.name in ("apache2", "nginx", "php-fpm", "httpd") and process.name in ("whoami", "id", "hostname", "uname", "ifconfig", "ip", "netstat", "ss", "ps", "cat", "ls", "pwd"))
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+[[rule.threat.technique]]
+id = "T1505"
+name = "Server Software Component"
+reference = "https://attack.mitre.org/techniques/T1505/"
+[[rule.threat.technique.subtechnique]]
+id = "T1505.003"
+name = "Web Shell"
+reference = "https://attack.mitre.org/techniques/T1505/003/"
+
+[rule.threat.tactic]
+id = "TA0003"
+name = "Persistence"
+reference = "https://attack.mitre.org/tactics/TA0003/"
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+[[rule.threat.technique]]
+id = "T1059"
+name = "Command and Scripting Interpreter"
+reference = "https://attack.mitre.org/techniques/T1059/"
+[[rule.threat.technique.subtechnique]]
+id = "T1059.004"
+name = "Unix Shell"
+reference = "https://attack.mitre.org/techniques/T1059/004/"
+
+[rule.threat.tactic]
+id = "TA0002"
+name = "Execution"
+reference = "https://attack.mitre.org/tactics/TA0002/"
