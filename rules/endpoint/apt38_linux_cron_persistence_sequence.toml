@@ -1,0 +1,104 @@
+[metadata]
+creation_date = "2026/02/25"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/25"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = """
+Detects a behavioral sequence indicative of cron-based persistence used by APT38 (Bluenoroff/BeagleBoyz). The rule correlates two events: first, a crontab command is executed to install or modify a cron job, followed by the cron daemon spawning a process that executes a payload from a world-writable staging directory such as /tmp, /dev/shm, /var/tmp, or /run/shm.
+"""
+false_positives = [
+    "Ansible ad-hoc cron modules that deploy scripts to /tmp before scheduling.",
+    "CI/CD runners that use /tmp for build artifact staging with cron-based cleanup.",
+    "Legitimate system administration scripts temporarily placed in /tmp during maintenance.",
+]
+from = "now-6m"
+index = ["logs-endpoint.events.process-*"]
+language = "eql"
+license = "Elastic License v2"
+name = "APT38 Suspicious Cron Job Execution from Staging Directory"
+note = """## Triage and Analysis
+
+APT38 is a North Korean state-sponsored group that abuses cron jobs for persistence on compromised Linux hosts, particularly in financial institution networks.
+
+### Key Investigation Steps
+1. Examine the crontab command arguments and the user who executed it.
+2. Identify the payload path executed by crond from the staging directory.
+3. Inspect the payload file for malicious content (reverse shell, downloader, etc.).
+4. Check the parent process chain of the crontab command for initial access indicators.
+5. Look for other APT38 TTPs: timestomping (T1070.006), web shells (T1505.003), data destruction (T1485).
+6. Review network connections from the host around the time of cron execution.
+"""
+references = [
+    "https://attack.mitre.org/groups/G0082/",
+    "https://www.cisa.gov/news-events/cybersecurity-advisories/aa20-239a",
+    "https://content.fireeye.com/apt/rpt-apt38",
+    "https://pberba.github.io/security/2022/01/30/linux-threat-hunting-for-persistence-systemd-timers-cron/",
+]
+risk_score = 73
+rule_id = "b3c5d7e9-1a2f-4b8c-9d0e-f12345apt038"
+severity = "high"
+tags = [
+    "Domain: Endpoint",
+    "OS: Linux",
+    "Use Case: Threat Detection",
+    "Tactic: Persistence",
+    "Tactic: Execution",
+    "Data Source: Elastic Defend",
+    "Threat: APT38",
+]
+timestamp_override = "event.ingested"
+type = "eql"
+
+query = '''
+sequence by host.id with maxspan=5m
+  [process where host.os.type == "linux" and event.type == "start" and event.action in ("exec", "exec_event", "start") and
+   process.name == "crontab" and process.args in ("-", "-l", "-e") and
+   not process.parent.executable in (
+     "/usr/bin/puppet", "/opt/puppetlabs/puppet/bin/puppet",
+     "/usr/bin/chef-client", "/usr/bin/ansible", "/usr/bin/ansible-playbook",
+     "/usr/bin/salt-minion", "/usr/bin/cfn-init"
+   )]
+  [process where host.os.type == "linux" and event.type == "start" and event.action in ("exec", "exec_event", "start") and
+   process.parent.name in ("cron", "crond") and
+   (process.executable like ("/tmp/*", "/dev/shm/*", "/var/tmp/*", "/run/shm/*") or
+    process.args like ("/tmp/*", "/dev/shm/*", "/var/tmp/*", "/run/shm/*"))]
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1053"
+name = "Scheduled Task/Job"
+reference = "https://attack.mitre.org/techniques/T1053/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1053.003"
+name = "Cron"
+reference = "https://attack.mitre.org/techniques/T1053/003/"
+
+[rule.threat.tactic]
+id = "TA0003"
+name = "Persistence"
+reference = "https://attack.mitre.org/tactics/TA0003/"
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1053"
+name = "Scheduled Task/Job"
+reference = "https://attack.mitre.org/techniques/T1053/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1053.003"
+name = "Cron"
+reference = "https://attack.mitre.org/techniques/T1053/003/"
+
+[rule.threat.tactic]
+id = "TA0002"
+name = "Execution"
+reference = "https://attack.mitre.org/tactics/TA0002/"
