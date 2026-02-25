@@ -1,0 +1,129 @@
+[metadata]
+creation_date = "2026/02/25"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/25"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = """
+Detects creation or modification of SSH authorized_keys files on Linux hosts. Adversaries, including APT28 (Fancy Bear),
+may add their own SSH public keys to authorized_keys files to maintain persistent access to compromised systems.
+This technique allows attackers to authenticate via SSH without needing the user's password, enabling stealthy
+re-entry even after credential rotation. The rule uses an EQL sequence to correlate a process writing to an
+authorized_keys file followed by the process execution context, reducing false positives from legitimate
+system administration.
+"""
+false_positives = [
+    "System administrators adding SSH keys for legitimate remote access.",
+    "Configuration management tools (Ansible, Puppet, Chef, SaltStack) managing SSH keys.",
+    "Cloud-init or user-data scripts provisioning SSH keys on new instances.",
+    "Automated deployment pipelines (CI/CD) that distribute SSH keys.",
+    "SSH key rotation scripts run by IT operations."
+]
+from = "now-6m"
+index = ["logs-endpoint.events.file-*"]
+language = "eql"
+license = "Elastic License v2"
+name = "SSH Authorized Keys File Modification on Linux Host"
+note = """## Triage and Analysis
+
+### Investigating SSH Authorized Keys File Modification
+
+SSH authorized_keys files control which public keys can authenticate to a user account via SSH. Adversaries modify these files to establish persistent backdoor access.
+
+### Key Investigation Steps
+
+1. **Identify the modifying process**: Check `process.executable` and `process.name` to determine what process wrote to the authorized_keys file. Legitimate modifications typically come from `ssh-keygen`, `cloud-init`, or configuration management tools.
+2. **Check the user context**: Examine `user.name` and `user.id`. Root-level modifications to other users' authorized_keys files are more suspicious.
+3. **Review the file path**: Determine which user's authorized_keys was modified. Modifications to `/root/.ssh/authorized_keys` are higher severity.
+4. **Correlate with login events**: Check for subsequent SSH logins from unusual source IPs shortly after the key was added.
+5. **Check parent process chain**: A shell spawned from a web server or unusual service modifying authorized_keys is highly suspicious.
+6. **Look for other persistence mechanisms**: APT28 often layers multiple persistence techniques. Check for systemd service creation, cron modifications, or kernel module loading around the same timeframe.
+
+### False Positive Analysis
+
+- Cloud-init on first boot will write authorized_keys — correlate with instance creation time.
+- Ansible/Puppet runs are typically scheduled and come from known management IPs.
+- SSH key rotation scripts should be documented and run from known service accounts.
+
+### Response and Remediation
+
+1. Immediately review the added SSH public key and compare against known authorized keys.
+2. If unauthorized, remove the key and rotate all SSH keys for the affected user.
+3. Check for active SSH sessions from unknown IPs.
+4. Review system logs for lateral movement from this host.
+5. Consider blocking the source IP at the network level.
+"""
+references = [
+    "https://attack.mitre.org/techniques/T1098/004/",
+    "https://www.nsa.gov/Press-Room/News-Highlights/Article/Article/2338164/drovorub-russian-gru-malware/",
+    "https://www.cybereason.com/blog/new-pervasive-worm-exploiting-linux-exim-server-vulnerability"
+]
+risk_score = 47
+rule_id = "b3f7a1c2-d4e5-6f78-9a0b-c1d2e3f4a5b6"
+severity = "medium"
+tags = [
+    "Domain: Endpoint",
+    "OS: Linux",
+    "Use Case: Threat Detection",
+    "Tactic: Persistence",
+    "Tactic: Privilege Escalation",
+    "Data Source: Elastic Defend",
+    "Threat: APT28"
+]
+timestamp_override = "event.ingested"
+type = "eql"
+
+query = '''
+file where host.os.type == "linux" and event.action in ("creation", "modification", "rename") and
+file.name == "authorized_keys" and file.path : ("*/.ssh/authorized_keys", "/etc/ssh/keys-*/authorized_keys") and
+not process.executable in (
+    "/usr/bin/cloud-init",
+    "/usr/bin/ansible",
+    "/usr/bin/ansible-playbook",
+    "/opt/puppetlabs/puppet/bin/puppet",
+    "/usr/bin/puppet",
+    "/usr/bin/chef-client",
+    "/opt/chef/bin/chef-client",
+    "/usr/bin/salt-minion",
+    "/usr/sbin/sshd"
+) and
+not process.name in ("cloud-init", "ansible", "ansible-playbook", "puppet", "chef-client", "salt-minion", "sshd")
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1098"
+name = "Account Manipulation"
+reference = "https://attack.mitre.org/techniques/T1098/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1098.004"
+name = "SSH Authorized Keys"
+reference = "https://attack.mitre.org/techniques/T1098/004/"
+
+[rule.threat.tactic]
+id = "TA0003"
+name = "Persistence"
+reference = "https://attack.mitre.org/tactics/TA0003/"
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1098"
+name = "Account Manipulation"
+reference = "https://attack.mitre.org/techniques/T1098/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1098.004"
+name = "SSH Authorized Keys"
+reference = "https://attack.mitre.org/techniques/T1098/004/"
+
+[rule.threat.tactic]
+id = "TA0004"
+name = "Privilege Escalation"
+reference = "https://attack.mitre.org/tactics/TA0004/"
