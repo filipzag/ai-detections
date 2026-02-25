@@ -1,0 +1,106 @@
+[metadata]
+creation_date = "2026/02/25"
+maturity = "production"
+updated_date = "2026/02/25"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = """
+Detects the use of archive utilities (tar, zip, gzip, 7z, rar) on Linux systems targeting sensitive directories
+such as /etc, /home, /root, /var, or SSH key locations. APT39 and similar threat actors use this technique
+(T1560.001) to compress collected data prior to exfiltration. This rule focuses on archiving behavior
+targeting high-value paths that are uncommon in normal system operations.
+"""
+name = "Linux Sensitive File Archiving via Utility"
+risk_score = 47
+rule_id = "b3f1a2c4-d5e6-4f78-9abc-def012345678"
+severity = "medium"
+tags = [
+    "Domain: Endpoint",
+    "OS: Linux",
+    "Use Case: Threat Detection",
+    "Tactic: Collection",
+    "Tactic: Exfiltration",
+    "Data Source: Elastic Defend",
+    "Threat: APT39",
+    "Technique: T1560.001"
+]
+type = "eql"
+language = "eql"
+license = "Elastic License v2"
+index = ["logs-endpoint.events.process-*"]
+timestamp_override = "event.ingested"
+from = "now-6m"
+
+query = '''
+process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+  process.name in ("tar", "zip", "gzip", "7z", "7za", "rar", "bzip2", "xz") and
+  process.command_line like~ ("*/etc/shadow*", "*/etc/passwd*", "*/etc/ssh*", "*/root/.ssh*",
+    "*/home/*/.ssh*", "*/root/.*", "*/var/log/*", "*/etc/krb5*", "*/tmp/*", "*/dev/shm/*",
+    "*id_rsa*", "*id_ed25519*", "*authorized_keys*", "*known_hosts*", "*.bash_history*",
+    "*credentials*", "*password*", "*.gnupg*", "*.kube/config*") and
+  not process.parent.executable in (
+    "/usr/bin/logrotate", "/usr/sbin/logrotate",
+    "/usr/lib/systemd/systemd", "/usr/bin/dpkg",
+    "/usr/bin/rpm", "/usr/bin/yum", "/usr/bin/apt-get",
+    "/usr/bin/dnf", "/usr/bin/ansible-playbook",
+    "/usr/bin/puppet", "/usr/bin/chef-client",
+    "/opt/chef/bin/chef-client", "/usr/bin/salt-minion",
+    "/usr/bin/borgbackup", "/usr/bin/borg",
+    "/usr/bin/restic", "/usr/bin/duplicity"
+  )
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+  [[rule.threat.technique]]
+  id = "T1560"
+  name = "Archive Collected Data"
+  reference = "https://attack.mitre.org/techniques/T1560/"
+
+    [[rule.threat.technique.subtechnique]]
+    id = "T1560.001"
+    name = "Archive via Utility"
+    reference = "https://attack.mitre.org/techniques/T1560/001/"
+
+  [rule.threat.tactic]
+  id = "TA0009"
+  name = "Collection"
+  reference = "https://attack.mitre.org/tactics/TA0009/"
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+  [rule.threat.tactic]
+  id = "TA0010"
+  name = "Exfiltration"
+  reference = "https://attack.mitre.org/tactics/TA0010/"
+
+[rule.false_positives]
+values = [
+    "Backup software (borgbackup, restic, duplicity) archiving system directories.",
+    "Log rotation tools compressing log files in /var/log.",
+    "System administrators performing manual backups of SSH keys or configuration files.",
+    "Configuration management tools (Ansible, Puppet, Chef) packaging configs."
+]
+
+[rule.note]
+value = """
+## Triage and Analysis
+
+### Context
+APT39 (Chafer/Remix Kitten) archives sensitive files before exfiltration using standard Linux utilities.
+
+### Investigation Steps
+1. Check the full command line for the target files being archived.
+2. Examine the output file path - staging in /tmp or /dev/shm is suspicious.
+3. Review the parent process chain for shell spawned from unusual sources.
+4. Check for subsequent network connections from the same host.
+5. Verify user context - is this a legitimate admin or service account?
+
+### False Positive Analysis
+- Logrotate compressing /var/log files is expected.
+- Backup tools archiving /etc or /home are normal.
+- CI/CD pipelines may archive build artifacts.
+"""
