@@ -1,0 +1,79 @@
+[metadata]
+creation_date = "2026/02/25"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/25"
+
+[rule]
+author = ["Elastic"]
+description = """
+Detects crontab execution with encoded or obfuscated payloads commonly used by APT38 for persistent access to financial systems. North Korean threat actors encode cron job commands using base64, hex, or piped execution to evade signature-based detection while maintaining scheduled access for data exfiltration.
+"""
+from = "now-9m"
+index = ["logs-endpoint.events.process-*"]
+language = "eql"
+license = "Elastic License v2"
+name = "APT38 Linux Cron Job with Encoded Payload"
+risk_score = 73
+rule_id = "a8f3c1d2-9e4b-4c7a-b5d6-e8f9a0b1c2d3"
+severity = "high"
+tags = [
+    "Domain: Endpoint",
+    "OS: Linux",
+    "Use Case: Threat Detection",
+    "Tactic: Persistence",
+    "Tactic: Execution",
+    "Data Source: Elastic Defend",
+    "Threat: APT38"
+]
+timestamp_override = "event.ingested"
+type = "eql"
+
+query = '''
+process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+process.name == "crontab" and 
+(
+  process.command_line like "*base64*" or
+  process.command_line like "*base32*" or
+  process.command_line like "*xxd*" or
+  process.command_line like "*openssl enc*" or
+  process.command_line like "*echo*|*sh*" or
+  process.command_line like "*echo*|*bash*" or
+  process.command_line like "*printf*|*sh*" or
+  process.command_line like "*curl*|*sh*" or
+  process.command_line like "*wget*|*sh*"
+) and
+not process.parent.name in ("ansible-playbook", "puppet", "chef-client", "salt-minion")
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+[[rule.threat.technique]]
+id = "T1053"
+name = "Scheduled Task/Job"
+reference = "https://attack.mitre.org/techniques/T1053/"
+[[rule.threat.technique.subtechnique]]
+id = "T1053.003"
+name = "Cron"
+reference = "https://attack.mitre.org/techniques/T1053/003/"
+
+[rule.threat.tactic]
+id = "TA0003"
+name = "Persistence"
+reference = "https://attack.mitre.org/tactics/TA0003/"
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+[[rule.threat.technique]]
+id = "T1053"
+name = "Scheduled Task/Job"
+reference = "https://attack.mitre.org/techniques/T1053/"
+[[rule.threat.technique.subtechnique]]
+id = "T1053.003"
+name = "Cron"
+reference = "https://attack.mitre.org/techniques/T1053/003/"
+
+[rule.threat.tactic]
+id = "TA0002"
+name = "Execution"
+reference = "https://attack.mitre.org/tactics/TA0002/"
