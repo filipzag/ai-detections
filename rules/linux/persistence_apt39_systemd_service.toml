@@ -1,0 +1,48 @@
+[metadata]
+creation_date = "2026/02/26"
+integration = ["endpoint"]
+maturity = "production"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = "Detects creation of systemd service unit files by suspicious processes followed by service enablement via systemctl. APT39 (Chafer/Remix Kitten) uses this technique to establish persistence on compromised Linux hosts by creating malicious .service files that execute payloads on boot."
+name = "APT39 Linux Systemd Service Persistence via Suspicious Unit File Creation"
+risk_score = 73
+severity = "high"
+type = "eql"
+language = "eql"
+index = ["logs-endpoint.events.file-*", "logs-endpoint.events.process-*"]
+tags = ["Domain: Endpoint", "OS: Linux", "Use Case: Threat Detection", "Tactic: Persistence", "Tactic: Privilege Escalation", "Data Source: Elastic Defend", "Threat: APT39"]
+query = '''
+sequence by host.id with maxspan=5m
+  [file where host.os.type == "linux" and event.action == "creation" and
+   file.path like ("/etc/systemd/system/*", "/usr/lib/systemd/system/*", "/lib/systemd/system/*", "/run/systemd/system/*", "/home/*/.config/systemd/user/*") and
+   file.extension == "service" and
+   not process.executable in (
+     "/usr/bin/dpkg", "/usr/bin/rpm", "/usr/bin/yum", "/usr/bin/apt-get", "/usr/bin/dnf",
+     "/usr/bin/puppet", "/opt/puppetlabs/puppet/bin/puppet",
+     "/usr/bin/chef-client", "/opt/chef/bin/chef-client",
+     "/usr/bin/ansible", "/usr/bin/ansible-playbook",
+     "/usr/bin/salt-minion", "/usr/lib/systemd/systemd"
+   )]
+  [process where host.os.type == "linux" and event.action == "exec" and
+   process.name == "systemctl" and process.args in ("enable", "daemon-reload")]
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+  [[rule.threat.technique]]
+  id = "T1543"
+  name = "Create or Modify System Process"
+  reference = "https://attack.mitre.org/techniques/T1543/"
+
+    [[rule.threat.technique.subtechnique]]
+    id = "T1543.002"
+    name = "Systemd Service"
+    reference = "https://attack.mitre.org/techniques/T1543/002/"
+
+  [rule.threat.tactic]
+  id = "TA0003"
+  name = "Persistence"
+  reference = "https://attack.mitre.org/tactics/TA0003/"
