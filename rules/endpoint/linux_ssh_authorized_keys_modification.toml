@@ -1,0 +1,74 @@
+[metadata]
+creation_date = "2026/02/26"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/26"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = """
+Detects creation or modification of SSH authorized_keys files by suspicious processes. APT39 and other Iranian threat groups plant SSH keys for persistent backdoor access to compromised Linux hosts. This allows attackers to maintain access without credentials and survive password changes.
+"""
+from = "now-6m"
+index = ["logs-endpoint.events.file-*"]
+language = "eql"
+license = "Elastic License v2"
+name = "SSH Authorized Keys File Modification by Unusual Process"
+risk_score = 47
+rule_id = "b3f1a2c4-d5e6-4f78-9a0b-1c2d3e4f5a6b"
+severity = "medium"
+tags = ["Domain: Endpoint", "OS: Linux", "Use Case: Threat Detection", "Tactic: Persistence", "Tactic: Lateral Movement", "Data Source: Elastic Defend", "Threat: APT39"]
+timestamp_override = "event.ingested"
+type = "eql"
+query = '''
+file where host.os.type == "linux" and event.type in ("creation", "change") and
+  file.name : "authorized_keys*" and
+  not process.name in (
+    "ssh-copy-id", "sshd", "ssh", "sftp-server", "scp",
+    "dpkg", "rpm", "yum", "apt-get", "dnf", "zypper",
+    "puppet", "chef-client", "ansible-playbook", "salt-minion",
+    "cloud-init", "waagent", "google_guest_agent"
+  ) and
+  not process.executable in (
+    "/usr/sbin/sshd",
+    "/usr/bin/ssh-copy-id",
+    "/usr/lib/openssh/sftp-server",
+    "/usr/libexec/openssh/sftp-server"
+  )
+'''
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1098"
+name = "Account Manipulation"
+reference = "https://attack.mitre.org/techniques/T1098/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1098.004"
+name = "SSH Authorized Keys"
+reference = "https://attack.mitre.org/techniques/T1098/004/"
+
+[rule.threat.tactic]
+id = "TA0003"
+name = "Persistence"
+reference = "https://attack.mitre.org/tactics/TA0003/"
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1021"
+name = "Remote Services"
+reference = "https://attack.mitre.org/techniques/T1021/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1021.004"
+name = "SSH"
+reference = "https://attack.mitre.org/techniques/T1021/004/"
+
+[rule.threat.tactic]
+id = "TA0008"
+name = "Lateral Movement"
+reference = "https://attack.mitre.org/tactics/TA0008/"
