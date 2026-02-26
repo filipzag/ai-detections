@@ -1,0 +1,93 @@
+[metadata]
+creation_date = "2026/02/26"
+integration = ["endpoint"]
+maturity = "production"
+updated_date = "2026/02/26"
+
+[rule]
+author = ["AI Detection Engineering"]
+description = """
+Detects local user account creation on Linux via useradd or adduser commands. APT39 (Chafer/Remix Kitten) \
+is known to create local accounts for persistent backdoor access (T1136.001). This rule flags account \
+creation from suspicious parent processes or non-interactive sessions, which are uncommon in legitimate \
+administration workflows.
+"""
+name = "APT39 Linux Backdoor Account Creation via useradd or adduser"
+risk_score = 47
+severity = "medium"
+type = "eql"
+language = "eql"
+license = "Elastic License v2"
+tags = [
+    "Domain: Endpoint",
+    "OS: Linux",
+    "Use Case: Threat Detection",
+    "Tactic: Persistence",
+    "Data Source: Elastic Defend",
+    "Threat: APT39"
+]
+index = ["logs-endpoint.events.process-*"]
+from = "now-6m"
+interval = "5m"
+timestamp_override = "event.ingested"
+
+query = '''
+process where host.os.type == "linux" and event.type == "start" and event.action == "exec" and
+  process.name in ("useradd", "adduser") and
+  not process.parent.executable in (
+    "/usr/bin/ansible-playbook",
+    "/usr/bin/puppet",
+    "/usr/bin/chef-client",
+    "/opt/chef/bin/chef-client",
+    "/usr/bin/salt-minion",
+    "/usr/lib/systemd/systemd",
+    "/usr/bin/cloud-init",
+    "/usr/bin/dpkg",
+    "/usr/bin/rpm",
+    "/usr/bin/yum",
+    "/usr/bin/apt-get",
+    "/usr/bin/dnf"
+  ) and
+  not process.parent.name in (
+    "ansible-playbook", "puppet", "chef-client", "salt-minion",
+    "cloud-init", "dpkg", "rpm", "yum", "apt-get", "dnf"
+  )
+'''
+
+[rule.false_positives]
+values = [
+    "Configuration management tools (Ansible, Puppet, Chef, Salt) creating service accounts.",
+    "Cloud-init provisioning on first boot.",
+    "Package managers creating system accounts during software installation.",
+    "Legitimate sysadmin account creation via interactive shell."
+]
+
+[rule.note]
+value = """
+## Triage and Analysis
+
+### Key Investigation Steps
+1. Check the created username - look for generic/suspicious names (e.g., svc, backup, admin1, random strings).
+2. Inspect parent process chain - was this spawned from a web shell, reverse shell, or script in /tmp or /dev/shm?
+3. Check if the account was added to privileged groups - look for subsequent usermod -aG sudo/wheel commands.
+4. Correlate with SSH activity - was the new account used for login shortly after creation?
+5. Review process.entry_leader - determine if this originated from an interactive or non-interactive session.
+"""
+
+[[rule.threat]]
+framework = "MITRE ATT&CK"
+
+[[rule.threat.technique]]
+id = "T1136"
+name = "Create Account"
+reference = "https://attack.mitre.org/techniques/T1136/"
+
+[[rule.threat.technique.subtechnique]]
+id = "T1136.001"
+name = "Local Account"
+reference = "https://attack.mitre.org/techniques/T1136/001/"
+
+[rule.threat.tactic]
+id = "TA0003"
+name = "Persistence"
+reference = "https://attack.mitre.org/tactics/TA0003/"
